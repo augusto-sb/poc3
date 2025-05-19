@@ -1,11 +1,13 @@
 package main
 
-
+// imports
 
 import (
+	"context"
 	"crypto/md5"
 	"errors"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,7 +16,7 @@ import (
 	"time"
 )
 
-
+// types
 
 type session struct {
 	security   string;
@@ -22,35 +24,22 @@ type session struct {
 	info       map[string]any;
 }
 
-
-
 type user struct {
 	name string;
 	password string;
 }
 
-
-
-func middleware(next http.HandlerFunc) http.HandlerFunc {
-	var corsOrigin string = os.Getenv("CORS_ORIGIN");
-	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		if(corsOrigin != ""){
-			//rw.Header().Set("Access-Control-Allow-Credentials", "true")
-			rw.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
-			//rw.Header().Set("Access-Control-Allow-Headers", "content-type")
-			//rw.Header().Set("Access-Control-Allow-Methods", "GET,DELETE,POST,PUT")
-			rw.Header().Set("Access-Control-Allow-Methods", "GET,POST")
-		}
-		next.ServeHTTP(rw, req)
-	})
-}
-
-
+// consts
 
 const cookieName string = "PHPSESSID"; //gg
 const cookieDurationInSeconds = 3600;
 const cleanerInterval = 30;
-var mu sync.Mutex = sync.Mutex{};
+const ctxKey string = "yourKey";
+
+// vars
+
+var muS sync.Mutex = sync.Mutex{};
+var muU sync.Mutex = sync.Mutex{};
 var sessions map[string]session = map[string]session{};
 var users []user = []user{
 	user{
@@ -59,25 +48,47 @@ var users []user = []user{
 	},
 };
 
+// helpers
 
+func logger(msj string){
+	if(os.Getenv("LOGGER")=="true"){
+		fmt.Println(msj);
+	}
+}
 
-//timer cada tanto limpie sessions vencidas!
+/*func getSession(req *http.Request) *session{ // mmmmm
+	cookie, err := req.Cookie(cookieName)
+	if (err != nil){
+		return nil;
+	}
+	muS.Lock();
+	val, ok := sessions[cookie.Value];
+	muS.Unlock();
+	if(!ok){
+		return nil;
+	}
+	return &val;
+}*/
+
+//gracefull shutdown implementar!!!
+
 func setCleaner(timeSec uint) () {
+	//timer cada tanto limpia sessions vencidas!
 	ticker := time.NewTicker(time.Duration(timeSec * 1000) * time.Millisecond)
 	done := make(chan bool)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				fmt.Println("running cleaner!")
-				mu.Lock();
+				logger("running cleaner!")
+				muS.Lock();
 				for k, v := range sessions {
 					if(v.timestamp + (cookieDurationInSeconds * 1000) < time.Now().UnixMilli()){
-						fmt.Println("cleaner found expired: "+k)
+						logger("cleaner found expired: "+k)
 						delete(sessions, k);
 					}
 				}
-				mu.Unlock();
+				muS.Unlock();
 			case <-done:
 				ticker.Stop()
 				return
@@ -86,111 +97,192 @@ func setCleaner(timeSec uint) () {
 	}()
 }
 
+// middlewares
 
-
-//gracefull shutdown
-
-func getSession() *session{
-	asd
+func sessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var shouldSetCookie bool = false;
+		cookie, err := req.Cookie(cookieName)
+		if err != nil {
+			if(errors.Is(err, http.ErrNoCookie)){
+				shouldSetCookie = true;
+			}else{
+				logger("error retrieving cookie")
+				http.Error(rw, "server error", http.StatusInternalServerError);
+				return;
+			}
+		}
+		//get info de origen para que no me la puedan usar de otro lado!
+		//el proxy deberia pasarme el header o algo de info! como ip publica etc
+		//logger(req.Header.Values("User-Agent")) //recibir en x-forwarded-for por ej! para bien seguro
+		pseudoSecure := req.Header.Get("User-Agent") + req.Header.Get("Accept") + req.Header.Get("Host") + req.Header.Get("X-Forwarded-For") + req.Header.Get("Forwarded");
+		logger(pseudoSecure)
+		if(!shouldSetCookie){
+			//check validity
+			muS.Lock();
+			val, ok := sessions[cookie.Value];
+			muS.Unlock();
+			if(ok){
+				//rw.Write([]byte("cookie found in session and is:" + cookie.Value+"\n"))
+				if(val.timestamp + (cookieDurationInSeconds * 1000) < time.Now().UnixMilli()){
+					//rw.Write([]byte("expired session!\n")) //shouldSetCookie ???
+					muS.Lock();
+					delete(sessions, cookie.Value)
+					muS.Unlock();
+					shouldSetCookie = true;
+				}else{
+					//actualizar timestamp
+					val.timestamp = time.Now().UnixMilli()
+				}
+				if(val.security != pseudoSecure){
+					rw.Write([]byte("hacker wtf\n"))
+					return;
+				}
+				if(len(val.info) == 0){
+					logger("not logged in")
+				}else{
+					logger("logged in")
+				}
+			}else{
+				//rw.Write([]byte("cookie must have expired found in session!\n"))
+				shouldSetCookie = true
+			}
+		}
+		if(shouldSetCookie){
+			h := md5.New()
+			now := time.Now()
+			io.WriteString(h, now.String())
+			io.WriteString(h, pseudoSecure)
+			cookieValueAndSessionKey := hex.EncodeToString(h.Sum(nil));
+			cookie = &http.Cookie{
+				Name:     cookieName,
+				//Domain:   "localhost:3000",
+				Value:    cookieValueAndSessionKey,
+				MaxAge:   cookieDurationInSeconds,
+				HttpOnly: true,
+				Secure:   true, //CONFIGURABLE EN PROD, CORS TAMBIEN
+				SameSite: http.SameSiteLaxMode, //http.SameSiteNoneMode,
+			}
+			newSession := session{
+				timestamp: now.UnixMilli(),
+				security: pseudoSecure,
+			}
+			muS.Lock();
+			sessions[cookieValueAndSessionKey] = newSession;
+			muS.Unlock();
+			//rw.Write([]byte("cookie not send, setting one!"))
+		}
+		http.SetCookie(rw, cookie)
+		ctx := context.WithValue(req.Context(), ctxKey, cookie.Value)
+        req = req.WithContext(ctx)
+		next.ServeHTTP(rw, req)
+	})
 }
 
-func sessionHandler(respW http.ResponseWriter, req *http.Request) {
-	asd
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	var corsOrigin string = os.Getenv("CORS_ORIGIN");
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if(corsOrigin != ""){
+			rw.Header().Set("Access-Control-Allow-Credentials", "true")
+			rw.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
+			rw.Header().Set("Access-Control-Allow-Headers", "authorization")
+			rw.Header().Set("Access-Control-Allow-Methods", "GET,POST")
+		}
+		if(req.Method == http.MethodOptions){
+			return;
+		}
+		next.ServeHTTP(rw, req)
+	})
 }
-func loginHandler(respW http.ResponseWriter, req *http.Request) {
-	var sess *session = getSession();
-	u, p, ok := req.BasicAuth();
+
+func middleware(next http.HandlerFunc) http.HandlerFunc {
+	// chain de todos los middlewares
+	return corsMiddleware(sessionMiddleware(next));
+}
+
+// handlers
+
+func sessionHandler(rw http.ResponseWriter, req *http.Request) {
+	/*var sess *session = getSession(req);
+	if(sess == nil){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}*/
+	cookieValueAndSessionKey, ok := req.Context().Value(ctxKey).(string)
 	if(!ok){
-		respW.WriteHeader(http.StatusBadRequest);
+		rw.WriteHeader(http.StatusInternalServerError);
 		return;
 	}
-	logged := false;
-	mu.Lock();
+	muS.Lock();
+	sess, ok := sessions[cookieValueAndSessionKey];
+	muS.Unlock();
+	if(!ok){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}
+	byteArr, err := json.Marshal(len(sess.info));
+	if(err != nil){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}
+	rw.Write(byteArr)
+}
+
+func loginHandler(rw http.ResponseWriter, req *http.Request) {
+	cookieValueAndSessionKey, ok := req.Context().Value(ctxKey).(string)
+	if(!ok){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}
+	u, p, ok := req.BasicAuth();
+	if(!ok){
+		rw.WriteHeader(http.StatusBadRequest);
+		return;
+	}
+	validUserPass := false;
+	muU.Lock();
 	for _, val := range users {
 		if(val.name == u && val.password == p){
-			logged = true;
+			validUserPass = true;
 			break;
 		}
 	}
-	mu.Unlock();
-}
-func logoutHandler(respW http.ResponseWriter, req *http.Request) {
-	asd
-}
-
-
-
-func genericCookieHandler(respW http.ResponseWriter, req *http.Request) {
-	var shouldSetCookie bool = false;
-	cookie, err := req.Cookie(cookieName)
-	if err != nil {
-		switch {
-		case errors.Is(err, http.ErrNoCookie):
-			fmt.Println("cookie not send!");
-			shouldSetCookie = true;
-		default:
-			http.Error(respW, "server error", http.StatusInternalServerError);
-			return;
-		}
-	}
-	//get info de origen para que no me la puedan usar de otro lado!
-	//el proxy deberia pasarme el header o algo de info! como ip publica etc
-	pseudoSecure := req.Header.Get("User-Agent") + req.Header.Get("Accept") + req.Header.Get("Host") + req.Header.Get("X-Forwarded-For") + req.Header.Get("Forwarded");
-	//fmt.Println(req.Header.Values("User-Agent")) //recibir en x-forwarded-for por ej! para bien seguro
-	if(shouldSetCookie){
-		h := md5.New()
-		now := time.Now()
-		milliseconds := now.UnixMilli()
-		io.WriteString(h, now.String())
-		io.WriteString(h, pseudoSecure)
-		cookieValueAndSessionKey := hex.EncodeToString(h.Sum(nil));
-		newCookie := http.Cookie{
-			Name:     cookieName,
-			//Domain:   "localhost:3000",
-			Value:    cookieValueAndSessionKey,
-			MaxAge:   cookieDurationInSeconds,
-			HttpOnly: true,
-			Secure:   true, //CONFIGURABLE EN PROD, CORS TAMBIEN
-			SameSite: http.SameSiteNoneMode, //http.SameSiteLaxMode,
-		}
-		newSession := session{
-			timestamp: milliseconds,
-			security: pseudoSecure,
-		}
-		mu.Lock();
-		sessions[cookieValueAndSessionKey] = newSession;
-		mu.Unlock();
-		http.SetCookie(respW, &newCookie)
-		respW.Write([]byte("cookie not send, setting one!"))
-	}else{
-		//check validity
-		mu.Lock();
-		val, ok := sessions[cookie.Value];
-		mu.Unlock();
-		if(ok){
-			respW.Write([]byte("cookie found in session and is:" + cookie.Value+"\n"))
-			if(val.timestamp + (cookieDurationInSeconds * 1000) < time.Now().UnixMilli()){
-				respW.Write([]byte("expired session!\n")) //shouldSetCookie ???
-			}
-			if(val.security != pseudoSecure){
-				respW.Write([]byte("hacker wtf\n"))
-			}
-			if(len(val.info) == 0){
-				fmt.Println("not logged in")
-			}else{
-				fmt.Println("logged in")
-			}
+	muU.Unlock();
+	if(validUserPass){
+		muS.Lock();
+		sess, ok := sessions[cookieValueAndSessionKey];
+		if(!ok){
+			rw.WriteHeader(http.StatusBadRequest);
 		}else{
-			respW.Write([]byte("cookie must have expired found in session!\n"))
+			sess.info = map[string]any{"asd":"asd"};
+			rw.WriteHeader(http.StatusOK)
 		}
+		muS.Unlock();
+	}else{
+		rw.WriteHeader(http.StatusUnauthorized)
 	}
 }
 
+func logoutHandler(rw http.ResponseWriter, req *http.Request) {
+	cookieValueAndSessionKey, ok := req.Context().Value(ctxKey).(string)
+	if(!ok){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}
+	_, ok = sessions[cookieValueAndSessionKey];
+	if(!ok){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}
+	delete(sessions, cookieValueAndSessionKey)
+}
 
+// main
 
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", middleware(http.NotFound))
+	mux.HandleFunc("GET /entities", middleware(http.NotFound))
 	mux.HandleFunc("GET /session", middleware(sessionHandler))
 	mux.HandleFunc("POST /login", middleware(loginHandler))
 	mux.HandleFunc("POST /logout", middleware(logoutHandler))

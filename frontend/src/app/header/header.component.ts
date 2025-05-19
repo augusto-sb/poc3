@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { SessionService } from '../session.service';
 
 @Component({
@@ -10,14 +10,12 @@ import { SessionService } from '../session.service';
 })
 export class HeaderComponent {
   constructor(
-    //private readonly router: Router,
     public readonly session: SessionService,
   ) {}
 
   public logout(): void {
     if(confirm('¿seguro?')){
       this.session.logout();
-      //this.router.navigate(['']);
     }
   }
 }
