@@ -2,13 +2,13 @@ import { Component, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 
 class Entity {
-  Id: string = '';
-  Value: string = '';
+  Id = '';
+  Value = '';
 }
 
 class MyResponse<T> {
   Results: T[] = [];
-  Count: number = 0;
+  Count = 0;
 }
 
 /*type Entity = {
@@ -24,7 +24,7 @@ class MyResponse<T> {
 })
 export class EntitiesComponent implements OnInit {
   public entities: Entity[] = [];
-  public count: number = 0;
+  public count = 0;
 
   constructor(
     private readonly httpClient: HttpClient,
@@ -39,7 +39,7 @@ export class EntitiesComponent implements OnInit {
       (err) => {
         console.log(err, JSON.stringify(this));
       },
-      () => {},
+      () => {console.log('finish');},
     );
     return;
   }

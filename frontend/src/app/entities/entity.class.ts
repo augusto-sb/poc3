@@ -1,5 +1,5 @@
 export class Entity {
-  Id: string = '';
-  Value: string = '';
-  _path: string = '/entities';
+  Id = '';
+  Value = '';
+  _path = '/entities';
 }

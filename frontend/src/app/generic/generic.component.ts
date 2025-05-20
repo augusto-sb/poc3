@@ -4,7 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import 'reflect-metadata';
 
 class Class {
-  _path: string = '';
+  _path = '';
   constructor() {
     throw new Error('use a class!');
   }
@@ -19,7 +19,7 @@ class Class {
 export class GenericComponent<TData extends Class = Class> implements OnInit {
   public entities: TData[] = [];
   public keys: (keyof TData)[] = [];
-  public count: number = 0;
+  public count = 0;
 
   constructor(
     private readonly httpClient: HttpClient,
@@ -29,20 +29,18 @@ export class GenericComponent<TData extends Class = Class> implements OnInit {
   }
 
   ngOnInit(): void {
-    this.httpClient.get<{results: TData[]; count: number;}>('/entities'/*AAAAA*/, {responseType: 'json'}).subscribe(
+    this.httpClient.get<{Results: TData[]; Count: number;}>('/entities'/*AAAAA*/, {responseType: 'json'}).subscribe(
       (resp) => {
-        this.entities = resp as any;
         if(this.entities.length){
-          this.keys = Object.keys(this.entities[0] as any) as any;
+          this.keys = Object.keys(this.entities[0] as keyof TData) as (keyof TData)[];
         }
-        this.count = this.entities.length;
-        //this.entities = resp.results;
-        //this.count = resp.count;
+        this.entities = resp.Results;
+        this.count = resp.Count;
       },
       (err) => {
         console.log(err);alert();
       },
-      () => {},
+      () => {console.log('finish');},
     );
     return;
   }

@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
   providedIn: 'root'
 })
 export class SessionService {
-  private loggedIn: boolean = false;
+  private loggedIn = false;
 
   constructor(
     private readonly httpClient: HttpClient,
@@ -41,6 +41,7 @@ export class SessionService {
   public login(data: Partial<{username: string | null; password: string | null}>): void {
     this.httpClient.post('/login', null, {responseType: 'text', headers: {"Authorization": "Basic " + btoa(data.username+":"+data.password)}}).subscribe(
       resp => {
+        console.log(resp)
         this.loggedIn = true;
         this.router.navigate(['']);
       },
@@ -63,6 +64,7 @@ export class SessionService {
     //document.cookie = '';
     this.httpClient.post('/logout', null, undefined).subscribe(
       resp => {
+        console.log(resp)
         this.loggedIn = false;
         this.router.navigate(['']);
       },
