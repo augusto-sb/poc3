@@ -5,6 +5,12 @@ class Entity {
   Id: string = '';
   Value: string = '';
 }
+
+class MyResponse<T> {
+  Results: T[] = [];
+  Count: number = 0;
+}
+
 /*type Entity = {
   Id: string;
   Value: string;
@@ -17,23 +23,18 @@ class Entity {
   styleUrl: './entities.component.css'
 })
 export class EntitiesComponent implements OnInit {
-  /*public readonly keys: string[] = [];
-  public entities: Entity[] = [];*/
-  //public readonly keys: (keyof Entity)[] = [];
   public entities: Entity[] = [];
+  public count: number = 0;
 
   constructor(
     private readonly httpClient: HttpClient,
-  ) {
-    //console.log(Entity, Object.getOwnPropertyNames(new Entity()));
-    //this.keys = Object.getOwnPropertyNames(new Entity()) as (keyof Entity)[];
-  }
+  ) { }
 
   ngOnInit(): void {
-    this.httpClient.get<Entity[]>('/entities', {responseType: 'json'}).subscribe(
+    this.httpClient.get<MyResponse<Entity>>('/entities', {responseType: 'json'}).subscribe(
       (resp) => {
-        //console.log(resp, typeof resp);
-        this.entities = resp;
+        this.entities = resp.Results;
+        this.count = resp.Count;
       },
       (err) => {
         console.log(err, JSON.stringify(this));

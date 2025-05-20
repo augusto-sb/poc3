@@ -50,6 +50,21 @@ var users []user = []user{
 
 // helpers
 
+func genCookie(val string, delete bool) *http.Cookie {
+	MaxAge := -1
+	if(!delete){
+		MaxAge = cookieDurationInSeconds
+	}
+	return &http.Cookie{
+		Name:     cookieName,
+		Value:    val,
+		MaxAge:   MaxAge,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	};
+}
+
 func logger(msj string){
 	if(os.Getenv("LOGGER")=="true"){
 		fmt.Println(msj);
@@ -102,6 +117,8 @@ func setCleaner(timeSec uint) () {
 func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		var shouldSetCookie bool = false;
+		now := time.Now();
+		unixMilli := now.UnixMilli()
 		cookie, err := req.Cookie(cookieName)
 		if err != nil {
 			if(errors.Is(err, http.ErrNoCookie)){
@@ -124,31 +141,34 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 			val, ok := sessions[cookie.Value];
 			muS.Unlock();
 			if(ok){
-				//rw.Write([]byte("cookie found in session and is:" + cookie.Value+"\n"))
-				if(val.timestamp + (cookieDurationInSeconds * 1000) < time.Now().UnixMilli()){
-					//rw.Write([]byte("expired session!\n")) //shouldSetCookie ???
-					logger("expired")
+				if(val.timestamp + (cookieDurationInSeconds * 1000) < unixMilli){
+					// expired
 					muS.Lock();
 					delete(sessions, cookie.Value)
 					muS.Unlock();
 					shouldSetCookie = true;
 				}else{
 					//actualizar timestamp
-					val.timestamp = time.Now().UnixMilli()
+					val.timestamp = unixMilli
+					muS.Lock();
+					sessions[cookie.Value] = val;
+					muS.Unlock();
+					cookie.MaxAge = cookieDurationInSeconds
 				}
 				if(val.security != pseudoSecure){
-					logger("pseudoSecure: "+pseudoSecure)
+					muS.Lock();
+					delete(sessions, cookie.Value)
+					muS.Unlock();
+					rw.WriteHeader(http.StatusNotAcceptable)
 					rw.Write([]byte("hacker wtf\n"))
 					return;
 				}
 				if(len(val.info) == 0){
-					logger("not logged in")
 					if(protected){
-						rw.Write([]byte("hacker wtf\n"))
+						// protected handler and not logged in - future use of permissions
+						rw.WriteHeader(http.StatusUnauthorized)
 						return;
 					}
-				}else{
-					logger("logged in")
 				}
 			}else{
 				//rw.Write([]byte("cookie must have expired found in session!\n"))
@@ -157,27 +177,17 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 		}
 		if(shouldSetCookie){
 			h := md5.New()
-			now := time.Now()
 			io.WriteString(h, now.String())
 			io.WriteString(h, pseudoSecure)
 			cookieValueAndSessionKey := hex.EncodeToString(h.Sum(nil));
-			cookie = &http.Cookie{
-				Name:     cookieName,
-				//Domain:   "localhost:3000",
-				Value:    cookieValueAndSessionKey,
-				MaxAge:   cookieDurationInSeconds,
-				HttpOnly: true,
-				Secure:   true, //CONFIGURABLE EN PROD, CORS TAMBIEN
-				SameSite: http.SameSiteLaxMode, //http.SameSiteNoneMode,
-			}
+			cookie = genCookie(cookieValueAndSessionKey, false)
 			newSession := session{
-				timestamp: now.UnixMilli(),
+				timestamp: unixMilli,
 				security: pseudoSecure,
 			}
 			muS.Lock();
 			sessions[cookieValueAndSessionKey] = newSession;
 			muS.Unlock();
-			//rw.Write([]byte("cookie not send, setting one!"))
 		}
 		http.SetCookie(rw, cookie)
 		ctx := context.WithValue(req.Context(), ctxKey, cookie.Value)
@@ -259,15 +269,11 @@ func loginHandler(rw http.ResponseWriter, req *http.Request) {
 	if(validUserPass){
 		muS.Lock();
 		sess, ok := sessions[cookieValueAndSessionKey];
-		//_, ok := sessions[cookieValueAndSessionKey];
 		if(!ok){
 			rw.WriteHeader(http.StatusBadRequest);
 		}else{
-			//fmt.Println(sessions)
-			sess.info = map[string]any{"asd":"asd"}; // no funca en el sessions original :o
+			sess.info = map[string]any{"asd":"asd"};
 			sessions[cookieValueAndSessionKey] = sess;
-			//sessions[cookieValueAndSessionKey].info = map[string]any{"asd":"asd"};
-			//fmt.Println(sessions)
 			rw.WriteHeader(http.StatusOK)
 		}
 		muS.Unlock();
@@ -288,6 +294,8 @@ func logoutHandler(rw http.ResponseWriter, req *http.Request) {
 		return;
 	}
 	delete(sessions, cookieValueAndSessionKey)
+	cookie := genCookie("", true)
+	http.SetCookie(rw, cookie);
 }
 
 func entitiesHandler(rw http.ResponseWriter, req *http.Request) {
@@ -295,7 +303,11 @@ func entitiesHandler(rw http.ResponseWriter, req *http.Request) {
 		Id string;
 		Value string;
 	}
-	byteArr, err := json.Marshal([]Entity{{Id: "AAAAA", Value: "AAAAA"}, {Id: "BBBBB", Value: "BBBBB"}, {Id: "CCCCC", Value: "CCCCC"}});
+	type Response struct {
+		Results []Entity;
+		Count uint;
+	}
+	byteArr, err := json.Marshal(Response{Count: 15, Results: []Entity{{Id: "AAAAA", Value: "AAAAA"}, {Id: "BBBBB", Value: "BBBBB"}, {Id: "CCCCC", Value: "CCCCC"}}});
 	if(err != nil){
 		rw.WriteHeader(http.StatusInternalServerError);
 		return;

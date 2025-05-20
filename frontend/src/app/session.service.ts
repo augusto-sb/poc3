@@ -59,7 +59,7 @@ export class SessionService {
   public logout(): void {
     sessionStorage.clear();
     localStorage.clear();
-    console.log(document.cookie.split('; '));
+    console.log(document.cookie.split('; ').map(x => {const tmp = x.split('='); return {k: tmp[0], v: tmp[1]};}));
     //document.cookie = '';
     this.httpClient.post('/logout', null, undefined).subscribe(
       resp => {
