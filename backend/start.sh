@@ -1,1 +1,1 @@
-CORS_ORIGIN="http://localhost:4200" go run .
+LOGGER="true" CORS_ORIGIN="http://localhost:4200" go run .

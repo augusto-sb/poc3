@@ -60,7 +60,7 @@ export class SessionService {
     sessionStorage.clear();
     localStorage.clear();
     console.log(document.cookie.split('; '));
-    document.cookie = '';
+    //document.cookie = '';
     this.httpClient.post('/logout', null, undefined).subscribe(
       resp => {
         this.loggedIn = false;

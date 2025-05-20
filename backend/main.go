@@ -99,7 +99,7 @@ func setCleaner(timeSec uint) () {
 
 // middlewares
 
-func sessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
+func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		var shouldSetCookie bool = false;
 		cookie, err := req.Cookie(cookieName)
@@ -118,6 +118,7 @@ func sessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		pseudoSecure := req.Header.Get("User-Agent") + req.Header.Get("Accept") + req.Header.Get("Host") + req.Header.Get("X-Forwarded-For") + req.Header.Get("Forwarded");
 		logger(pseudoSecure)
 		if(!shouldSetCookie){
+			logger(cookie.Value)
 			//check validity
 			muS.Lock();
 			val, ok := sessions[cookie.Value];
@@ -126,6 +127,7 @@ func sessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				//rw.Write([]byte("cookie found in session and is:" + cookie.Value+"\n"))
 				if(val.timestamp + (cookieDurationInSeconds * 1000) < time.Now().UnixMilli()){
 					//rw.Write([]byte("expired session!\n")) //shouldSetCookie ???
+					logger("expired")
 					muS.Lock();
 					delete(sessions, cookie.Value)
 					muS.Unlock();
@@ -135,11 +137,16 @@ func sessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 					val.timestamp = time.Now().UnixMilli()
 				}
 				if(val.security != pseudoSecure){
+					logger("pseudoSecure: "+pseudoSecure)
 					rw.Write([]byte("hacker wtf\n"))
 					return;
 				}
 				if(len(val.info) == 0){
 					logger("not logged in")
+					if(protected){
+						rw.Write([]byte("hacker wtf\n"))
+						return;
+					}
 				}else{
 					logger("logged in")
 				}
@@ -195,9 +202,9 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-func middleware(next http.HandlerFunc) http.HandlerFunc {
+func middleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 	// chain de todos los middlewares
-	return corsMiddleware(sessionMiddleware(next));
+	return corsMiddleware(sessionMiddleware(next, protected));
 }
 
 // handlers
@@ -230,6 +237,7 @@ func sessionHandler(rw http.ResponseWriter, req *http.Request) {
 
 func loginHandler(rw http.ResponseWriter, req *http.Request) {
 	cookieValueAndSessionKey, ok := req.Context().Value(ctxKey).(string)
+	logger(cookieValueAndSessionKey)
 	if(!ok){
 		rw.WriteHeader(http.StatusInternalServerError);
 		return;
@@ -251,10 +259,15 @@ func loginHandler(rw http.ResponseWriter, req *http.Request) {
 	if(validUserPass){
 		muS.Lock();
 		sess, ok := sessions[cookieValueAndSessionKey];
+		//_, ok := sessions[cookieValueAndSessionKey];
 		if(!ok){
 			rw.WriteHeader(http.StatusBadRequest);
 		}else{
-			sess.info = map[string]any{"asd":"asd"};
+			//fmt.Println(sessions)
+			sess.info = map[string]any{"asd":"asd"}; // no funca en el sessions original :o
+			sessions[cookieValueAndSessionKey] = sess;
+			//sessions[cookieValueAndSessionKey].info = map[string]any{"asd":"asd"};
+			//fmt.Println(sessions)
 			rw.WriteHeader(http.StatusOK)
 		}
 		muS.Unlock();
@@ -277,15 +290,28 @@ func logoutHandler(rw http.ResponseWriter, req *http.Request) {
 	delete(sessions, cookieValueAndSessionKey)
 }
 
+func entitiesHandler(rw http.ResponseWriter, req *http.Request) {
+	type Entity struct {
+		Id string;
+		Value string;
+	}
+	byteArr, err := json.Marshal([]Entity{{Id: "AAAAA", Value: "AAAAA"}, {Id: "BBBBB", Value: "BBBBB"}, {Id: "CCCCC", Value: "CCCCC"}});
+	if(err != nil){
+		rw.WriteHeader(http.StatusInternalServerError);
+		return;
+	}
+	rw.Write(byteArr);
+}
+
 // main
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", middleware(http.NotFound))
-	mux.HandleFunc("GET /entities", middleware(http.NotFound))
-	mux.HandleFunc("GET /session", middleware(sessionHandler))
-	mux.HandleFunc("POST /login", middleware(loginHandler))
-	mux.HandleFunc("POST /logout", middleware(logoutHandler))
+	mux.HandleFunc("/", middleware(http.NotFound, false))
+	mux.HandleFunc("GET /entities", middleware(entitiesHandler, true))
+	mux.HandleFunc("GET /session", middleware(sessionHandler, false))
+	mux.HandleFunc("POST /login", middleware(loginHandler, false))
+	mux.HandleFunc("POST /logout", middleware(logoutHandler, false))
 	setCleaner(cleanerInterval);
 	err := http.ListenAndServe("0.0.0.0:8080", mux)
 	if err != nil {

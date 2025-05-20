@@ -1,7 +1,7 @@
 <button routerLink=''>Home</button>
 <button routerLink='about'>About</button>
-<button routerLink='entities'>Entidades</button>
 @if(session.isLoggedIn()){
+	<button routerLink='entities'>Entidades</button>
 	<button (click)="logout()">logout</button>
 }@else{
 	<button routerLink='login'>login</button>
