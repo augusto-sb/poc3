@@ -9,22 +9,22 @@ import { EntitiesComponent } from './entities/entities.component';
 import { generalGuard } from './general.guard';
 
 export const routes: Routes = [
-	{
-		path: '',
-		component: HomeComponent,
-	},
-	{
-		path: 'about',
-		component: AboutComponent,
-	},
-	{
-		path: 'entities',
-		component: EntitiesComponent,
-		//component: GenericComponent<Entity>,
-		canActivate: [generalGuard],
-	},
-	{
-		path: 'login',
-		component: LoginComponent,
-	},
+  {
+    path: '',
+    component: HomeComponent,
+  },
+  {
+    path: 'about',
+    component: AboutComponent,
+  },
+  {
+    path: 'entities',
+    component: EntitiesComponent,
+    //component: GenericComponent<Entity>,
+    canActivate: [generalGuard],
+  },
+  {
+    path: 'login',
+    component: LoginComponent,
+  },
 ];

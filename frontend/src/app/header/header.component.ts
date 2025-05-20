@@ -6,15 +6,13 @@ import { SessionService } from '../session.service';
   selector: 'app-header',
   imports: [RouterLink],
   templateUrl: './header.component.html',
-  styleUrl: './header.component.css'
+  styleUrl: './header.component.css',
 })
 export class HeaderComponent {
-  constructor(
-    public readonly session: SessionService,
-  ) {}
+  constructor(public readonly session: SessionService) {}
 
   public logout(): void {
-    if(confirm('¿seguro?')){
+    if (confirm('¿seguro?')) {
       this.session.logout();
     }
   }

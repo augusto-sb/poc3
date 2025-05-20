@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import {FormGroup, FormControl, ReactiveFormsModule} from '@angular/forms';
+import { FormGroup, FormControl, ReactiveFormsModule } from '@angular/forms';
 
 import { SessionService } from '../session.service';
 
@@ -7,7 +7,7 @@ import { SessionService } from '../session.service';
   selector: 'app-login',
   imports: [ReactiveFormsModule],
   templateUrl: './login.component.html',
-  styleUrl: './login.component.css'
+  styleUrl: './login.component.css',
 })
 export class LoginComponent {
   public readonly loginForm = new FormGroup({
@@ -15,9 +15,7 @@ export class LoginComponent {
     password: new FormControl(''),
   });
 
-  constructor(
-    public readonly session: SessionService,
-  ) {}
+  constructor(public readonly session: SessionService) {}
 
   public onSubmit() {
     this.session.login(this.loginForm.value);

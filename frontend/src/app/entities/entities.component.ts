@@ -20,26 +20,26 @@ class MyResponse<T> {
   selector: 'app-entities',
   imports: [],
   templateUrl: './entities.component.html',
-  styleUrl: './entities.component.css'
+  styleUrl: './entities.component.css',
 })
 export class EntitiesComponent implements OnInit {
   public entities: Entity[] = [];
   public count = 0;
 
-  constructor(
-    private readonly httpClient: HttpClient,
-  ) { }
+  constructor(private readonly httpClient: HttpClient) {}
 
   ngOnInit(): void {
-    this.httpClient.get<MyResponse<Entity>>('/entities', {responseType: 'json'}).subscribe(
-      (resp) => {
+    this.httpClient.get<MyResponse<Entity>>('/entities', { responseType: 'json' }).subscribe(
+      resp => {
         this.entities = resp.Results;
         this.count = resp.Count;
       },
-      (err) => {
+      err => {
         console.log(err, JSON.stringify(this));
       },
-      () => {console.log('finish');},
+      () => {
+        console.log('finish');
+      },
     );
     return;
   }
