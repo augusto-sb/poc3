@@ -287,7 +287,7 @@ func main() {
 	mux.HandleFunc("POST /login", middleware(loginHandler))
 	mux.HandleFunc("POST /logout", middleware(logoutHandler))
 	setCleaner(cleanerInterval);
-	err := http.ListenAndServe("0.0.0.0:3000", mux)
+	err := http.ListenAndServe("0.0.0.0:8080", mux)
 	if err != nil {
 		panic(err)
 	}
