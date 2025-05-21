@@ -136,7 +136,6 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 		}
 		//get info de origen para que no me la puedan usar de otro lado!
 		//el proxy deberia pasarme el header o algo de info! como ip publica etc
-		//logger(req.Header.Values("User-Agent")) //recibir en x-forwarded-for por ej! para bien seguro
 		pseudoSecure := req.Header.Get("User-Agent") + req.Header.Get("Accept") + req.Header.Get("Host") + req.Header.Get("X-Forwarded-For") + req.Header.Get("Forwarded")
 		logger(pseudoSecure)
 		if !shouldSetCookie {
@@ -156,7 +155,7 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 				}
 				if val.security != pseudoSecure {
 					deleteSession(cookie.Value)
-					fmt.Println("hacker wtf")
+					logger("hacker wtf")
 					shouldSetCookie = true
 				}
 				if len(val.info) == 0 {
@@ -187,11 +186,6 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 		req = req.WithContext(ctx)
 		next.ServeHTTP(rw, req)
 	})
-}
-
-func middleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
-	// chain de todos los middlewares
-	return sessionMiddleware(next, protected)
 }
 
 // handlers
@@ -287,11 +281,11 @@ func entitiesHandler(rw http.ResponseWriter, req *http.Request) {
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", middleware(http.NotFound, false))
-	mux.HandleFunc("GET /entities", middleware(entitiesHandler, true))
-	mux.HandleFunc("GET /session", middleware(sessionHandler, false))
-	mux.HandleFunc("POST /login", middleware(loginHandler, false))
-	mux.HandleFunc("POST /logout", middleware(logoutHandler, false))
+	mux.HandleFunc("/", sessionMiddleware(http.NotFound, false))
+	mux.HandleFunc("GET /entities", sessionMiddleware(entitiesHandler, true))
+	mux.HandleFunc("GET /session", sessionMiddleware(sessionHandler, false))
+	mux.HandleFunc("POST /login", sessionMiddleware(loginHandler, false))
+	mux.HandleFunc("POST /logout", sessionMiddleware(logoutHandler, false))
 	setCleaner(cleanerInterval)
 	err := http.ListenAndServe("0.0.0.0:8080", mux)
 	if err != nil {
