@@ -12,7 +12,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -49,6 +51,19 @@ var users []user = []user{
 }
 
 // helpers
+
+func gracefulShutdown(channel chan bool) {
+	s := make(chan os.Signal, 1)
+	signal.Notify(s, os.Interrupt)
+	signal.Notify(s, syscall.SIGTERM)
+	go func() {
+		<-s
+		channel <- true
+		close(channel)
+		logger("Sutting down gracefully.")
+		os.Exit(0)
+	}()
+}
 
 func getSession(key string) (session, bool) {
 	muS.Lock()
@@ -90,9 +105,7 @@ func logger(msj string) {
 	}
 }
 
-//gracefull shutdown implementar!!!
-
-func setCleaner(timeSec uint) {
+func setCleaner(timeSec uint) chan bool {
 	//timer cada tanto limpia sessions vencidas!
 	ticker := time.NewTicker(time.Duration(timeSec*1000) * time.Millisecond)
 	done := make(chan bool)
@@ -110,11 +123,13 @@ func setCleaner(timeSec uint) {
 				}
 				muS.Unlock()
 			case <-done:
+				logger("ending cleaner")
 				ticker.Stop()
 				return
 			}
 		}
 	}()
+	return done
 }
 
 // middlewares
@@ -279,6 +294,11 @@ func entitiesHandler(rw http.ResponseWriter, req *http.Request) {
 
 // main
 
+func init() {
+	cleanerChannel := setCleaner(cleanerInterval)
+	go gracefulShutdown(cleanerChannel)
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", sessionMiddleware(http.NotFound, false))
@@ -286,7 +306,6 @@ func main() {
 	mux.HandleFunc("GET /session", sessionMiddleware(sessionHandler, false))
 	mux.HandleFunc("POST /login", sessionMiddleware(loginHandler, false))
 	mux.HandleFunc("POST /logout", sessionMiddleware(logoutHandler, false))
-	setCleaner(cleanerInterval)
 	err := http.ListenAndServe("0.0.0.0:8080", mux)
 	if err != nil {
 		panic(err)

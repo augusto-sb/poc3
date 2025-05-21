@@ -9,5 +9,7 @@ services:
       - "8080:8080/tcp"
   backend:
     image: "poc3/backend:1.0.0"
+    environment:
+      LOGGER: 'true'
     build:
       context: "backend"
