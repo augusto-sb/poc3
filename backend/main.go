@@ -50,6 +50,25 @@ var users []user = []user{
 
 // helpers
 
+func getSession(key string)(session, bool){
+	muS.Lock()
+	val, ok := sessions[key]
+	muS.Unlock()
+	return val, ok;
+}
+
+func setSession(key string, sess session){
+	muS.Lock()
+	sessions[key] = sess
+	muS.Unlock()
+}
+
+func deleteSession(key string){
+	muS.Lock()
+	delete(sessions, key)
+	muS.Unlock()
+}
+
 func genCookie(val string, delete bool) *http.Cookie {
 	MaxAge := -1
 	if !delete {
@@ -70,20 +89,6 @@ func logger(msj string) {
 		fmt.Println(msj)
 	}
 }
-
-/*func getSession(req *http.Request) *session{ // mmmmm
-	cookie, err := req.Cookie(cookieName)
-	if (err != nil){
-		return nil;
-	}
-	muS.Lock();
-	val, ok := sessions[cookie.Value];
-	muS.Unlock();
-	if(!ok){
-		return nil;
-	}
-	return &val;
-}*/
 
 //gracefull shutdown implementar!!!
 
@@ -137,31 +142,22 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 		if !shouldSetCookie {
 			logger(cookie.Value)
 			//check validity
-			muS.Lock()
-			val, ok := sessions[cookie.Value]
-			muS.Unlock()
+			val, ok := getSession(cookie.Value)
 			if ok {
 				if val.timestamp+(cookieDurationInSeconds*1000) < unixMilli {
 					// expired
-					muS.Lock()
-					delete(sessions, cookie.Value)
-					muS.Unlock()
+					deleteSession(cookie.Value)
 					shouldSetCookie = true
 				} else {
 					//actualizar timestamp
 					val.timestamp = unixMilli
-					muS.Lock()
-					sessions[cookie.Value] = val
-					muS.Unlock()
+					setSession(cookie.Value, val)
 					cookie.MaxAge = cookieDurationInSeconds
 				}
 				if val.security != pseudoSecure {
-					muS.Lock()
-					delete(sessions, cookie.Value)
-					muS.Unlock()
-					rw.WriteHeader(http.StatusNotAcceptable)
-					rw.Write([]byte("hacker wtf\n"))
-					return
+					deleteSession(cookie.Value)
+					fmt.Println("hacker wtf")
+					shouldSetCookie = true
 				}
 				if len(val.info) == 0 {
 					if protected {
@@ -171,7 +167,6 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 					}
 				}
 			} else {
-				//rw.Write([]byte("cookie must have expired found in session!\n"))
 				shouldSetCookie = true
 			}
 		}
@@ -185,9 +180,7 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 				timestamp: unixMilli,
 				security:  pseudoSecure,
 			}
-			muS.Lock()
-			sessions[cookieValueAndSessionKey] = newSession
-			muS.Unlock()
+			setSession(cookieValueAndSessionKey, newSession)
 		}
 		http.SetCookie(rw, cookie)
 		ctx := context.WithValue(req.Context(), ctxKey, cookie.Value)
@@ -220,19 +213,12 @@ func middleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 // handlers
 
 func sessionHandler(rw http.ResponseWriter, req *http.Request) {
-	/*var sess *session = getSession(req);
-	if(sess == nil){
-		rw.WriteHeader(http.StatusInternalServerError);
-		return;
-	}*/
 	cookieValueAndSessionKey, ok := req.Context().Value(ctxKey).(string)
 	if !ok {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	muS.Lock()
-	sess, ok := sessions[cookieValueAndSessionKey]
-	muS.Unlock()
+	sess, ok := getSession(cookieValueAndSessionKey)
 	if !ok {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
@@ -267,16 +253,14 @@ func loginHandler(rw http.ResponseWriter, req *http.Request) {
 	}
 	muU.Unlock()
 	if validUserPass {
-		muS.Lock()
-		sess, ok := sessions[cookieValueAndSessionKey]
+		sess, ok := getSession(cookieValueAndSessionKey)
 		if !ok {
 			rw.WriteHeader(http.StatusBadRequest)
 		} else {
 			sess.info = map[string]any{"asd": "asd"}
-			sessions[cookieValueAndSessionKey] = sess
+			setSession(cookieValueAndSessionKey, sess)
 			rw.WriteHeader(http.StatusOK)
 		}
-		muS.Unlock()
 	} else {
 		rw.WriteHeader(http.StatusUnauthorized)
 	}
@@ -288,12 +272,12 @@ func logoutHandler(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	_, ok = sessions[cookieValueAndSessionKey]
+	_, ok = getSession(cookieValueAndSessionKey)
 	if !ok {
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	delete(sessions, cookieValueAndSessionKey)
+	deleteSession(cookieValueAndSessionKey)
 	cookie := genCookie("", true)
 	http.SetCookie(rw, cookie)
 }
