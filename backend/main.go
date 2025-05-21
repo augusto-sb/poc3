@@ -50,20 +50,20 @@ var users []user = []user{
 
 // helpers
 
-func getSession(key string)(session, bool){
+func getSession(key string) (session, bool) {
 	muS.Lock()
 	val, ok := sessions[key]
 	muS.Unlock()
-	return val, ok;
+	return val, ok
 }
 
-func setSession(key string, sess session){
+func setSession(key string, sess session) {
 	muS.Lock()
 	sessions[key] = sess
 	muS.Unlock()
 }
 
-func deleteSession(key string){
+func deleteSession(key string) {
 	muS.Lock()
 	delete(sessions, key)
 	muS.Unlock()
@@ -189,25 +189,9 @@ func sessionMiddleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 	})
 }
 
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	var corsOrigin string = os.Getenv("CORS_ORIGIN")
-	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		if corsOrigin != "" {
-			rw.Header().Set("Access-Control-Allow-Credentials", "true")
-			rw.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
-			rw.Header().Set("Access-Control-Allow-Headers", "authorization")
-			rw.Header().Set("Access-Control-Allow-Methods", "GET,POST")
-		}
-		if req.Method == http.MethodOptions {
-			return
-		}
-		next.ServeHTTP(rw, req)
-	})
-}
-
 func middleware(next http.HandlerFunc, protected bool) http.HandlerFunc {
 	// chain de todos los middlewares
-	return corsMiddleware(sessionMiddleware(next, protected))
+	return sessionMiddleware(next, protected)
 }
 
 // handlers
